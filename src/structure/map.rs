@@ -81,12 +81,6 @@ impl Map {
         true
     }
     pub fn is_consistent(&self, val: usize, id: usize) -> bool {
-        /*for adj in self.get(id).unwrap().adjacent {
-            if self.get(adj).unwrap().val == Some(val) || self.get(adj).unwrap().domain.is_empty() {
-                return false;
-            }
-        }
-        true*/
         self.get(id).map_or(false, |reg| {
             reg.adjacent
                 .iter()
@@ -94,26 +88,32 @@ impl Map {
                 .all(|adj_reg| adj_reg.val != Some(val) && !adj_reg.domain.is_empty())
         })
     }
-    pub fn select_unassigned_id(&mut self) -> usize {
-        self.regions
-            .sort_by(|a, b| b.domain.len().cmp(&a.domain.len()));
-        //add pruning by degree
-        self.regions[0].id
+    pub fn select_unassigned_id(&self) -> usize {
+        let mut unassigned = self
+            .regions
+            .iter()
+            .filter(|&reg| reg.val == None)
+            .collect::<Vec<_>>();
+        unassigned.sort_by_key(|a| a.domain.len());
+        unassigned[0].id
     }
     pub fn assign(&mut self, id: usize, val: usize) {
-        self.get_mut(id).val = Some(val);
-        for adj in self.get(id).adjacent {
-            if let Some(pos) = self.get(adj).domain.iter().position(|v| *v == val) {
-                self.get_mut(adj).domain.swap_remove(pos);
+        if let Some(reg) = self.get_mut(id) {
+            reg.val = Some(val);
+        }
+        if let Some(reg) = self.get(id) {
+            for adj in &reg.adjacent {
+                self.get_mut(*adj)
+                    .and_then(|adj_reg| Some(adj_reg.domain.retain(|x| *x != val)));
             }
         }
     }
     pub fn order_domain(&self, id: usize) -> Vec<usize> {
         let choice_effect = |reg| {
             let mut sum = 0;
-            for state in self.get(reg).adjacent {
-                if self.get(state).val == None {
-                    for val in self.get(id).domain {
+            for state in self.get(reg).unwrap().adjacent {
+                if self.get(state).unwrap().val == None {
+                    for val in self.get(id).unwrap().domain {
                         if state != val {
                             sum += 1;
                         }
@@ -122,54 +122,8 @@ impl Map {
             }
             sum
         };
-        let mut region = self.get(id).clone();
-        region
-            .domain
-            .sort_by(|a, b| choice_effect(*b).cmp(&choice_effect(*a)));
-        region.domain
-    }
-    pub fn maintain_arc_consistency(&mut self, id: usize) -> Option<()> {
-        let mut queue = VecDeque::new();
-        for adj in self.get(id).adjacent {
-            if self.get(adj).val.is_none() {
-                queue.push_back(self.get(adj).id);
-            }
-        }
-        while let Some(adj) = queue.pop_front() {
-            if self.revise(id, adj) {
-                if self.get(id).domain.is_empty() {
-                    return None;
-                }
-                for neighbor in self.get(id).adjacent {
-                    if neighbor != adj && self.get(neighbor).val.is_none() {
-                        queue.push_back(neighbor);
-                    }
-                }
-            }
-        }
-        Some(())
-    }
-
-    fn revise(&mut self, origin: usize, neighbor: usize) -> bool {
-        let mut revised = false;
-        for val in self.get(origin).domain {
-            let consistent = self
-                .get(neighbor)
-                .domain
-                .iter()
-                .any(|y| self.is_consistent(val, *y));
-            if !consistent {
-                self.get(origin).domain.remove(
-                    self.get(origin)
-                        .domain
-                        .iter()
-                        .position(|x| *x == val)
-                        .unwrap(),
-                );
-                self.get_mut(origin).val = self.get(origin).domain.iter().next().cloned();
-                revised = true;
-            }
-        }
-        return revised;
+        let mut ordered_domain = self.get(id).unwrap().domain.clone();
+        ordered_domain.sort_by(|a, b| choice_effect(*b).cmp(&choice_effect(*a)));
+        ordered_domain
     }
 }
