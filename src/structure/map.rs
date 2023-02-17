@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::fmt::Debug;
 use std::fs;
 
@@ -10,17 +10,12 @@ pub struct Region {
     pub domain: Vec<usize>,
     pub adjacent: Vec<usize>,
 }
-
-impl Region {
-    fn default() -> Self {
-        Default::default()
-    }
-}
 #[derive(Clone)]
 pub struct Map {
     pub regions: Vec<Region>,
 }
 
+//TODO: optimize
 impl Map {
     pub fn create(file_name: &str) -> Result<Map, &'static str> {
         let binding = fs::read_to_string(file_name).expect("unable to convert file to string");
@@ -67,6 +62,7 @@ impl Map {
     }
     pub fn init_possible_vals(&mut self, n: usize) {
         self.regions.iter_mut().for_each(|reg| {
+            reg.domain.clear();
             for val in 1..=n {
                 reg.domain.push(val)
             }
@@ -89,13 +85,20 @@ impl Map {
         })
     }
     pub fn select_unassigned_id(&self) -> usize {
-        let mut unassigned = self
-            .regions
+        self.regions
             .iter()
-            .filter(|&reg| reg.val == None)
-            .collect::<Vec<_>>();
-        unassigned.sort_by_key(|a| a.domain.len());
-        unassigned[0].id
+            .filter(|reg| reg.val == None)
+            .min_by_key(|reg| {
+                (
+                    reg.domain.len(),
+                    reg.adjacent
+                        .iter()
+                        .filter(|adj| self.get(**adj).unwrap().val != None)
+                        .count(),
+                )
+            })
+            .unwrap()
+            .id
     }
     pub fn assign(&mut self, id: usize, val: usize) {
         if let Some(reg) = self.get_mut(id) {
@@ -109,21 +112,67 @@ impl Map {
         }
     }
     pub fn order_domain(&self, id: usize) -> Vec<usize> {
-        let choice_effect = |reg| {
-            let mut sum = 0;
-            for state in self.get(reg).unwrap().adjacent {
-                if self.get(state).unwrap().val == None {
-                    for val in self.get(id).unwrap().domain {
-                        if state != val {
-                            sum += 1;
-                        }
+        let choice_effect = |state: usize, reg: &Region| {
+            if reg.val == None {
+                reg.adjacent
+                    .iter()
+                    .filter(|&adj| self.get(*adj).unwrap().val == None && *adj != state)
+                    .count()
+            } else {
+                0
+            }
+        };
+        let current_reg = self.get(id).unwrap();
+        let mut ordered_domain = current_reg.domain.clone();
+        ordered_domain.sort_by_key(|_| {
+            current_reg
+                .adjacent
+                .iter()
+                .map(|&state| choice_effect(state, &self.get(state).unwrap()))
+                .sum::<usize>()
+        });
+        ordered_domain
+    }
+    pub fn arc_consistency(&mut self) -> bool {
+        let mut queue = VecDeque::new();
+        for reg in self.regions.iter().filter(|r| r.val.is_some()) {
+            for adj in reg.adjacent.iter() {
+                queue.push_back((reg.id, *adj));
+            }
+        }
+        while let Some((x1, x2)) = queue.pop_front() {
+            if self.revise(x1, x2) {
+                if self.get(x1).unwrap().domain.len() == 0 {
+                    return false;
+                }
+                for xk in self.get(x1).unwrap().adjacent.iter() {
+                    if *xk != x2 {
+                        queue.push_back((*xk, x1));
                     }
                 }
             }
-            sum
-        };
-        let mut ordered_domain = self.get(id).unwrap().domain.clone();
-        ordered_domain.sort_by(|a, b| choice_effect(*b).cmp(&choice_effect(*a)));
-        ordered_domain
+        }
+        true
+    }
+    fn revise(&mut self, x1: usize, x2: usize) -> bool {
+        let mut revised = false;
+        let mut satisfied;
+        let mut to_delete = HashSet::new();
+        let binding = self.get(x1).unwrap();
+        for x in binding.domain.iter() {
+            satisfied = false;
+            for y in self.get(x2).unwrap().domain.iter() {
+                if x != y {
+                    satisfied = true;
+                }
+            }
+            if !satisfied {
+                to_delete.insert(x);
+                revised = true;
+            }
+        }
+        self.get_mut(x1)
+            .and_then(|r| Some(r.domain.retain(|v| !to_delete.contains(&v))));
+        return revised;
     }
 }

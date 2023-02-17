@@ -1,25 +1,20 @@
-use std::result;
+use std::time::Instant;
 
-use crate::structure::map::{self, Map, Region};
+use crate::structure::map::Map;
 
 //TODO: look at moving some functions out of map struct
-pub fn backtracking_search(map: &mut Map) -> Option<Map> {
-    let mut vals = 3;
-    loop {
-        if let Some(result) = backtrack(map, vals) {
-            return Some(result);
-        } else {
-            vals += 1;
-        }
-    }
-}
 
-fn backtrack(map: &mut Map, vals: usize) -> Option<Map> {
+pub(crate) fn backtrack_search(map: &mut Map, vals: usize) -> Option<Map> {
+    let time = Instant::now();
     map.init_possible_vals(vals);
     let mut stack = Vec::new();
     stack.push(map.clone());
+    let mut visited = 0;
     while let Some(state) = stack.pop() {
+        visited += 1;
         if state.is_complete() {
+            println!("Search took {} milliseconds", time.elapsed().as_millis());
+            println!("Visited {} states", visited);
             return Some(state);
         }
         let id = state.select_unassigned_id();
@@ -27,7 +22,9 @@ fn backtrack(map: &mut Map, vals: usize) -> Option<Map> {
             if state.is_consistent(value, id) {
                 let mut new_state = state.clone();
                 new_state.assign(id, value);
-                stack.push(new_state);
+                if new_state.arc_consistency() {
+                    stack.push(new_state);
+                }
             }
         }
     }
