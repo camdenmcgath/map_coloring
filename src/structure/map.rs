@@ -53,12 +53,13 @@ impl Map {
         None
     }
     pub fn get_mut(&mut self, id: usize) -> Option<&mut Region> {
-        for reg in &mut self.regions {
+        /*for reg in &mut self.regions {
             if reg.id == id {
                 return Some(reg);
             }
         }
-        None
+        None*/
+        self.regions.iter_mut().find(|reg| reg.id == id)
     }
     pub fn init_possible_vals(&mut self, n: usize) {
         self.regions.iter_mut().for_each(|reg| {
@@ -70,7 +71,7 @@ impl Map {
     }
     pub fn is_complete(&self) -> bool {
         for region in self.regions.iter() {
-            if region.val == None {
+            if region.val.is_none() {
                 return false;
             }
         }
@@ -87,13 +88,13 @@ impl Map {
     pub fn select_unassigned_id(&self) -> usize {
         self.regions
             .iter()
-            .filter(|reg| reg.val == None)
+            .filter(|reg| reg.val.is_none())
             .min_by_key(|reg| {
                 (
                     reg.domain.len(),
                     reg.adjacent
                         .iter()
-                        .filter(|adj| self.get(**adj).unwrap().val != None)
+                        .filter(|adj| self.get(**adj).unwrap().val.is_some())
                         .count(),
                 )
             })
@@ -106,17 +107,18 @@ impl Map {
         }
         if let Some(reg) = self.get(id) {
             for adj in &reg.adjacent {
-                self.get_mut(*adj)
-                    .and_then(|adj_reg| Some(adj_reg.domain.retain(|x| *x != val)));
+                if let Some(adj_reg) = self.get_mut(*adj) {
+                    adj_reg.domain.retain(|x| *x != val)
+                }
             }
         }
     }
     pub fn order_domain(&self, id: usize) -> Vec<usize> {
         let choice_effect = |state: usize, reg: &Region| {
-            if reg.val == None {
+            if reg.val.is_none() {
                 reg.adjacent
                     .iter()
-                    .filter(|&adj| self.get(*adj).unwrap().val == None && *adj != state)
+                    .filter(|&adj| self.get(*adj).unwrap().val.is_none() && *adj != state)
                     .count()
             } else {
                 0
@@ -142,7 +144,7 @@ impl Map {
         }
         while let Some((x1, x2)) = queue.pop_front() {
             if self.revise(x1, x2) {
-                if self.get(x1).unwrap().domain.len() == 0 {
+                if self.get(x1).unwrap().domain.is_empty() {
                     return false;
                 }
                 for xk in self.get(x1).unwrap().adjacent.iter() {
@@ -171,8 +173,10 @@ impl Map {
                 revised = true;
             }
         }
-        self.get_mut(x1)
-            .and_then(|r| Some(r.domain.retain(|v| !to_delete.contains(&v))));
-        return revised;
+        self.get_mut(x1).map(|r| {
+            r.domain.retain(|v| !to_delete.contains(&v));
+            Some(())
+        });
+        revised
     }
 }
