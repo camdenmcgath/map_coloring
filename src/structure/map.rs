@@ -1,4 +1,4 @@
-use std::collections::{HashSet, VecDeque};
+use std::cmp::Reverse;
 use std::fmt::Debug;
 use std::fs;
 
@@ -53,12 +53,6 @@ impl Map {
         None
     }
     pub fn get_mut(&mut self, id: usize) -> Option<&mut Region> {
-        /*for reg in &mut self.regions {
-            if reg.id == id {
-                return Some(reg);
-            }
-        }
-        None*/
         self.regions.iter_mut().find(|reg| reg.id == id)
     }
     pub fn init_possible_vals(&mut self, n: usize) {
@@ -78,12 +72,12 @@ impl Map {
         true
     }
     pub fn is_consistent(&self, val: usize, id: usize) -> bool {
-        self.get(id).map_or(false, |reg| {
-            reg.adjacent
-                .iter()
-                .filter_map(|&adj| self.get(adj))
-                .all(|adj_reg| adj_reg.val != Some(val) && !adj_reg.domain.is_empty())
-        })
+        for adj in self.get(id).unwrap().adjacent {
+            if self.get(adj).unwrap().val == Some(val) {
+                return false;
+            }
+        }
+        true
     }
     pub fn select_unassigned_id(&self) -> usize {
         self.regions
@@ -91,11 +85,8 @@ impl Map {
             .filter(|reg| reg.val.is_none())
             .min_by_key(|reg| {
                 (
+                    //MRV
                     reg.domain.len(),
-                    reg.adjacent
-                        .iter()
-                        .filter(|adj| self.get(**adj).unwrap().val.is_some())
-                        .count(),
                 )
             })
             .unwrap()
@@ -105,6 +96,7 @@ impl Map {
         if let Some(reg) = self.get_mut(id) {
             reg.val = Some(val);
         }
+        //prune ajacent domains
         if let Some(reg) = self.get(id) {
             for adj in &reg.adjacent {
                 if let Some(adj_reg) = self.get_mut(*adj) {
@@ -113,7 +105,9 @@ impl Map {
             }
         }
     }
+
     pub fn order_domain(&self, id: usize) -> Vec<usize> {
+        //closure for counting unassigned adjacent territories
         let choice_effect = |state: usize, reg: &Region| {
             if reg.val.is_none() {
                 reg.adjacent
@@ -126,57 +120,16 @@ impl Map {
         };
         let current_reg = self.get(id).unwrap();
         let mut ordered_domain = current_reg.domain.clone();
+        //sorts most adjaent unassigned regions to least
         ordered_domain.sort_by_key(|_| {
-            current_reg
-                .adjacent
-                .iter()
-                .map(|&state| choice_effect(state, &self.get(state).unwrap()))
-                .sum::<usize>()
+            Reverse(
+                current_reg
+                    .adjacent
+                    .iter()
+                    .map(|&state| choice_effect(state, &self.get(state).unwrap()))
+                    .sum::<usize>(),
+            )
         });
         ordered_domain
-    }
-    pub fn arc_consistency(&mut self) -> bool {
-        let mut queue = VecDeque::new();
-        for reg in self.regions.iter().filter(|r| r.val.is_some()) {
-            for adj in reg.adjacent.iter() {
-                queue.push_back((reg.id, *adj));
-            }
-        }
-        while let Some((x1, x2)) = queue.pop_front() {
-            if self.revise(x1, x2) {
-                if self.get(x1).unwrap().domain.is_empty() {
-                    return false;
-                }
-                for xk in self.get(x1).unwrap().adjacent.iter() {
-                    if *xk != x2 {
-                        queue.push_back((*xk, x1));
-                    }
-                }
-            }
-        }
-        true
-    }
-    fn revise(&mut self, x1: usize, x2: usize) -> bool {
-        let mut revised = false;
-        let mut satisfied;
-        let mut to_delete = HashSet::new();
-        let binding = self.get(x1).unwrap();
-        for x in binding.domain.iter() {
-            satisfied = false;
-            for y in self.get(x2).unwrap().domain.iter() {
-                if x != y {
-                    satisfied = true;
-                }
-            }
-            if !satisfied {
-                to_delete.insert(x);
-                revised = true;
-            }
-        }
-        self.get_mut(x1).map(|r| {
-            r.domain.retain(|v| !to_delete.contains(&v));
-            Some(())
-        });
-        revised
     }
 }

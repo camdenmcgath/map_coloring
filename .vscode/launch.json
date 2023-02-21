@@ -20,7 +20,7 @@
                 }
             },
             "args": [
-                "us_states.txt"
+                "australia.txt"
             ],
             "cwd": "${workspaceFolder}"
         },
